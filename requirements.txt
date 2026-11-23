@@ -1,0 +1,3 @@
+# Python runtime for the Researcher and Evaluator pipeline.
+composio>=0.22.1
+mcp>=2.3.0

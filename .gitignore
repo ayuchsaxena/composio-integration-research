@@ -1,0 +1,10 @@
+.env*
+!.env.example
+.venv/
+.vercel/
+dist/
+human-review.html
+data/audit.json
+data/human_review_selection.json
+__pycache__/
+*.py[cod]

@@ -1,0 +1,22 @@
+{
+  "name": "composio-integration-research",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static Composio integration landscape case study",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "build": "python scripts/build_site.py",
+    "build:vercel": "python scripts/build_vercel.py",
+    "deploy:vercel": "npm run build:vercel && vercel deploy --prebuilt --prod",
+    "logos:sync": "python scripts/sync_logos.py",
+    "research": "python -m src.research",
+    "evaluate": "python -m src.evaluate",
+    "agents:run": "python -m src.agents --mode all",
+    "verify": "python -m src.verify",
+    "normalize": "python -m src.normalize",
+    "audit:queue": "python -m src.select_review_claims",
+    "review": "python -m src.review_server"
+  }
+}
