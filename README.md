@@ -1,35 +1,40 @@
-# Integration research desk
+# Composio integration research
 
-A small, reproducible two-agent workflow for evaluating third-party APIs before committing to an integration. The report distinguishes assignment-provided leads, agent claims, automated second-pass checks, and human audits.
+A two-agent research workflow and a concise report for deciding which app integrations are practical to build. The agents inspect official developer documentation for 100 apps, record sourced findings, and check each other’s work. When the sources do not answer a question, the result stays unknown or uncertain.
 
-## The two agents
+## The agents
 
-**Researcher** searches first-party developer resources, fetches page text through Composio Exa, and drafts claims with exact excerpts. Unsupported fields stay `unknown`; each non-unknown claim carries an evidence class and a quote checked against retrieved text.
+### Researcher
 
-**Evaluator** runs a separate search and fetches independent official pages. It checks the Researcher’s claims and must cite an exact excerpt for `correct` or `incorrect`; otherwise the result is `uncertain`. These labels are automated review outcomes, not human accuracy.
+The Researcher takes the app list in `data/applications.json` and looks for each app’s developer documentation. It retrieves page content, then records findings about authentication, credential access, API features, scopes, limits, webhooks, pricing, MCP support, and likely buildability.
 
-Both roles have a clear working style in `src/agents.py`: the Researcher is curious and candid about gaps; the Evaluator is skeptical, fair, and explicit about evidence. These role prompts are behavior constraints, not proof that a model is correct.
+Each supported finding includes a source URL and a short excerpt from the retrieved page. A working link or search result title alone is not treated as evidence. When the documentation does not answer a question, the Researcher leaves it unknown.
 
-## Architecture
+### Evaluator
 
-1. `data/applications.json` is the 100-app assignment input.
-2. `src/composio_mcp.py` connects to Composio Connect over MCP. It uses Composio's remote workbench for web search and its built-in `invoke_llm` helper for extraction and evaluation; it does not call OpenAI or another model API directly.
-3. `src/agents.py` runs the Researcher and Evaluator with separate instructions, searches, and outputs. Search results are filtered to likely first-party domains matching the assignment hint. This domain match is a helpful heuristic, not a guarantee of ownership. The evaluator sees its own fresh sources and its own checks are labeled as automated.
-4. `src/verify.py` checks that claim and evaluator excerpts occur in successfully fetched source text, verifies citations against the separate ledgers, and validates human audit records. Quote matching checks traceability, not semantic correctness. Automated outcomes remain separate from human accuracy.
-5. `src/select_review_claims.py` reproducibly selects the 20 weakest high-impact claims from the 100-app run. `data/audit.json` stores only submitted human decisions; no outcomes are invented.
-6. `src/report.py` generates the report; `scripts/build_human_review.py` builds the 20-claim inbox. `src/review_server.py` saves human submissions locally. `npm run build` writes the static Vercel report and inbox.
+The Evaluator checks the Researcher’s claims in a separate pass. It searches for official documentation independently and compares the page evidence with each claim. It records a claim as supported, contradicted, or inconclusive, with its own source and excerpt where available.
 
-## Composio-only inference and credentials
+The Evaluator is an automated second opinion. Its results are not human accuracy scores.
 
-The current setup uses the Connect consumer key (`ck_...`) with `https://connect.composio.dev/mcp`. Composio Connect exposes the remote workbench; inside it, `web_search` retrieves documentation and `invoke_llm` performs structured extraction and review. The application makes no direct request to OpenAI or another model provider, and needs no separate model-provider key. The key stays in `.env` and is never written to results.
+### Deterministic checks
 
-Composio documents that sandbox execution itself is currently unbilled, while `invoke_llm` uses model tokens. That does not establish the cost of those tokens or guarantee that the available $2 covers a 100-app run. Start with the one-call probe below and check Wallet/credits before spending on a full run. The probe is deliberately separate from research so it cannot accidentally trigger 100 calls.
+Python validation checks that cited sources belong to the app’s source record and that quoted excerpts appear in fetched page text. It also checks the structure of the output and the human-audit records when present. These checks establish traceability, not that a claim is semantically correct. Unclear or high-impact claims can be selected for human review.
 
-Official references: [Composio Connect](https://docs.composio.dev/docs/composio-connect), [Remote sandbox helpers and pricing note](https://docs.composio.dev/docs/sandbox/remote), [Remote Workbench](https://docs.composio.dev/toolkits/meta-tools/remote_workbench).
+## How the workflow runs
+
+1. Load the 100 app names and official-site hints.
+2. Search likely first-party developer resources and retrieve their page text through Composio tools over MCP.
+3. Ask the Researcher to create concise, evidence-linked findings.
+4. Ask the Evaluator to find and check evidence independently.
+5. Run deterministic validation and build the HTML report.
+
+The system uses Composio Connect’s MCP endpoint and Composio’s `invoke_llm` helper. It does not call a separate model-provider API directly. Search and page retrieval are still limited by what the available Composio tools can find and read, so missing or unclear documentation remains visible as uncertainty.
 
 ## Setup
 
-Requirements: Python 3.11+, Node.js 18+, and a Composio Connect consumer key. No separate model-provider key is configured.
+You need Python 3.11 or newer, Node.js 24, npm, and a Composio Connect consumer key. No app-specific API credentials are needed to research public documentation.
+
+From the project folder, in PowerShell:
 
 ```powershell
 python -m venv .venv
@@ -38,68 +43,104 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Set `COMPOSIO_CONSUMER_API_KEY` in `.env`. Keep `.env` local; it is ignored by Git. Do not paste credentials into the HTML report or commit them.
+Open `.env` and add your key to `COMPOSIO_CONSUMER_API_KEY`. The default MCP URL is `https://connect.composio.dev/mcp`. Keep `.env` on your computer; it is excluded from Git. Do not put keys in source files, research data, or the report.
 
-## Run the agents
+For macOS or Linux, create and activate the virtual environment with:
 
-```powershell
-# One Composio inference call. Check the Composio Wallet/credit balance afterward.
-python -m src.agents --mode probe
-
-# Researcher pass: source leads and structured claim drafts
-python -m src.research --input data/applications.json --output data/research.json
-
-# Independent Evaluator pass over that research file
-python -m src.evaluate --input data/applications.json --research data/research.json --output data/research.json
-
-# Or run Researcher then Evaluator in one pass
-python -m src.agents --mode all --input data/applications.json --output data/research.json
-
-# Validate citations and summarize the separate human audit ledger
-python -m src.verify --input data/research.json --audit data/audit.json --output data/verification.json
-
-# Normalize access/buildability labels conservatively
-npm run normalize -- --input data/research.json --output data/research.json
-
-# Select the 20 weakest claims for human review
-npm run audit:queue
-
-# Validate excerpts and human audits
-python -m src.verify --input data/research.json --audit data/audit.json --output data/verification.json
-
-# Open the persistent local human-review inbox (no API key required)
-npm run review
-
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+cp .env.example .env
 ```
 
-Both agents use Composio's sandbox `invoke_llm` helper. The current content-backed run fetched official page text for 94 apps and generated exact-excerpt claims. Composio Exa reports the tool status for each page; failures remain explicit. If inference is unavailable or credits run out, affected findings remain unknown/unreviewed. Human accuracy is not reported until a person submits review outcomes.
+Then add the consumer key to `.env` before starting a run.
 
-## Human verification
+## Start the agents
 
-The report now selects the 20 weakest claims (not 20 whole apps) using a deterministic score. It prioritizes Researcher/Evaluator disagreement, missing official page text or excerpts, uncertain access and credential claims, and findings that could change build priority. The score, both agent findings, reason, and available official evidence are shown for every selected claim.
+Start with a single-call connection and inference probe. It does not research the 100 apps:
 
-Run `npm run review` and open `http://127.0.0.1:8766/human-review.html`. Choose **Correct**, **Incorrect**, or **Uncertain**, add the official URL checked and reviewer initials, then save. A save is written to `data/audit.json`; the report’s progress, accuracy, corrections, and uncertainty are recalculated and rebuilt. Records are keyed by app and field, so resaving updates the existing row rather than adding a duplicate.
+```bash
+python -m src.agents --mode probe
+```
 
-Progress is reviewed claims divided by 20. Human-audited accuracy is correct divided by correct + incorrect; uncertain findings are excluded from accuracy and shown separately. The report lists correction examples only when people have actually recorded them. Automated Evaluator outcomes never count as human reviews.
+Run both agents across the app list:
 
-The human-review inbox is for local use only and is excluded from Vercel deployments. Review records stay on this computer. The static report includes the aggregate progress and findings, not the inbox or individual review records.
+```bash
+python -m src.agents --mode all --input data/applications.json --output data/research.json
+```
 
-## Reproducibility and safety
+Or run the passes separately:
 
-- Every non-unknown claim must cite a URL present in that app’s retrieval ledger.
-- The Evaluator cites only URLs from its separate evidence ledger.
-- Domain filtering is transparent and conservative, but humans should confirm the publisher and actual page content.
-- Search snippets can omit context; open cited docs before treating a claim as verified.
-- Retrieval uses bounded concurrency, retry with backoff for transient Composio failures, and a per-app record so failures do not erase the run.
-- Do not commit `.env`, credential-bearing MCP headers, or session URLs. The research dataset contains findings and evidence only.
+```bash
+# Researcher pass
+python -m src.agents --mode research --input data/applications.json --output data/research.json
 
-## Logos and report deployment
+# Evaluator pass (reads the same file and adds independent checks)
+python -m src.agents --mode evaluate --research data/research.json --output data/research.json
+```
 
-`data/logos.json` maps all applications to locally bundled SVGs or explicit monogram fallbacks. SVG files are stored under `assets/logos/` (66 exact matches in the current cache); unmatched apps use initials. Logo metadata tracks asset library, source, license notes, and brand guidance. Run `npm run logos:sync` to refresh the mapping after reviewing the changes.
+The default concurrency is three apps at a time. You can set `RESEARCH_CONCURRENCY`, `RESEARCH_MAX_RETRIES`, and `RESEARCH_DELAY_SECONDS` in `.env`. Each app is saved as the run progresses, so a failed app does not erase completed results. The probe and full run both use Composio inference; check your Composio wallet before running the full list. The available balance does not guarantee a full run will fit within it.
 
-`npm run build` emits `index.html`, a local `human-review.html` inbox, and the `report.html` preview. `npm run deploy:vercel` rebuilds the report, prepares a Vercel Build Output API v3 bundle containing only the two public report pages and local logos, then deploys it to production. The private review inbox, selected review queue, and review records are excluded. The Vercel project is `composio-assignment-report`. Use `npm run review` to manage reviews on this computer. Agent execution is a separate Python CLI workflow and is not included in the public bundle.
+## Validate and build the report
 
+After a run, check the evidence and output structure:
 
-## Current research status
+```bash
+python -m src.verify --input data/research.json --output data/verification.json
+```
 
-The content-backed run covers 100 apps. `data/research_initial.json` preserves the earlier title-led pass. `data/human_review_selection.json` holds the reproducible 20-claim review inbox. `data/human_review_progress.json` records the user-reported completion of human review across 20/20 doubt-selected claims. The report keeps app-level coverage separate from claim-level accuracy and automated Evaluator outcomes.
+Build the static report:
+
+```bash
+npm run build
+```
+
+Open `index.html` or `report.html` in a browser. The report is also deployed at [composio-assignment-report.vercel.app](https://composio-assignment-report.vercel.app/). To prepare a production deployment, use `npm run deploy:vercel` after linking the project with the Vercel CLI.
+
+The report contains the reviewed findings and evidence. The private review inbox and its queue are excluded from the public Vercel output.
+
+## Research data
+
+- `data/applications.json` — app list and initial website hints.
+- `data/research_initial.json` — earlier search-led pass, retained for comparison.
+- `data/research.json` — content-backed Researcher findings and Evaluator checks.
+- `data/verification.json` — latest deterministic quote and evidence checks.
+- `data/logos.json` and `assets/logos/` — local logo mapping and SVG assets.
+
+The current run covers 100 apps; fetched official page text was available for 94. A human reviewed the 20 claims selected because of evidence gaps or agent doubt. That is review coverage, not a measured accuracy percentage. Automated checks, human review coverage, and human accuracy are kept separate.
+
+## Useful commands
+
+```bash
+npm run agents:run       # run Researcher and Evaluator
+npm run verify           # validate the current research file
+npm run normalize        # conservatively normalize access/buildability labels
+npm run audit:queue      # select claims for the local human-review inbox
+npm run review           # start the private local review interface
+npm run logos:sync       # refresh logo matches from the configured icon source
+npm run build            # rebuild the report
+```
+
+## Project structure
+
+```text
+src/       Agent orchestration, Composio MCP client, validation, and report logic
+scripts/   Site, Vercel bundle, human-review page, and logo build scripts
+data/      App registry, research results, verification, and logo map
+assets/    Locally bundled application SVGs
+```
+
+## Evidence and limits
+
+- Official documentation is preferred; assignment website hints are starting points, not proof.
+- Facts, inferences, and unknowns are distinct in the research output.
+- A quote match confirms that the excerpt is present in retrieved text. It does not prove that the interpretation is correct.
+- API availability, credentials, and pricing may depend on account, region, plan, or admin role. The report preserves uncertainty where the public pages do not settle those details.
+- Human review must be recorded by a person. Automated Evaluator outcomes are never counted as human verdicts.
+
+## References
+
+- [Composio Connect](https://docs.composio.dev/docs/composio-connect)
+- [Composio remote sandbox](https://docs.composio.dev/docs/sandbox/remote)
+- [Composio Remote Workbench](https://docs.composio.dev/toolkits/meta-tools/remote_workbench)
