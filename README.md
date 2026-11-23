@@ -1,6 +1,51 @@
 # Composio integration research
 
-A two-agent research workflow and a concise report for deciding which app integrations are practical to build. The agents inspect official developer documentation for 100 apps, record sourced findings, and check each other’s work. When the sources do not answer a question, the result stays unknown or uncertain.
+[Open the live report](https://composio-assignment-report.vercel.app/)
+
+## The assignment
+
+We were given 100 apps and asked which ones Composio could realistically turn into integrations. The work was to find what each API can do, how developers get access, what authentication it uses, and what might make a build difficult. The goal was to find useful patterns and build priorities—not just fill a 100-row table.
+
+## What we did
+
+We built a small, multi-layer research workflow:
+
+1. **Researcher:** searches likely official developer resources, reads retrieved page text, and drafts claims with source links and short evidence excerpts.
+2. **Evaluator:** searches independently and checks the Researcher’s claims against separate documentation. It marks findings supported, contradicted, or inconclusive.
+3. **Python checks and human review:** deterministic checks confirm that citations and quotes can be traced to retrieved pages. The weakest, decision-relevant claims are selected for human review. A matching quote does not by itself prove the interpretation is right.
+
+The report brings the findings together by category, highlights integration opportunities and common access blockers, and links each app to its evidence. The saved research covers 100 apps; readable official page text was retrieved for 94. A person reviewed the 20 claims selected for evidence gaps or agent doubt. That is review coverage, not a measured accuracy score.
+
+## Set it up
+
+You need Python 3.11 or newer, Node.js 24, npm, and a Composio Connect consumer key. From the project folder:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+Add your consumer key to `COMPOSIO_CONSUMER_API_KEY` in `.env`. Keep that file local; it is excluded from Git. The agent uses Composio Connect over MCP and Composio’s `invoke_llm` helper. It does not call a separate model-provider API directly.
+
+Start with a one-call connection probe, then run the two agents:
+
+```bash
+python -m src.agents --mode probe
+python -m src.agents --mode all --input data/applications.json --output data/research.json
+```
+
+To check the output and rebuild the report:
+
+```bash
+python -m src.verify --input data/research.json --output data/verification.json
+npm run build
+```
+
+For macOS or Linux, use `python3 -m venv .venv`, `source .venv/bin/activate`, and `cp .env.example .env` for the environment setup. Add the same key before running the commands above.
+
+## The agents
 
 ## The agents
 
