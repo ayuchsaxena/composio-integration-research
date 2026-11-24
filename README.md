@@ -4,7 +4,7 @@
 
 ## The assignment
 
-We were given 100 apps and asked which ones Composio could realistically turn into integrations. The work was to find what each API can do, how developers get access, what authentication it uses, and what might make a build difficult. The goal was to find useful patterns and build priorities—not just fill a 100-row table.
+We were given 100 apps and asked which ones Composio could realistically turn into integrations. The work was to find what each API can do, how developers get access, what authentication it uses, and what might make a build difficult. The goal was to find useful patterns and build priorities and not just fill a 100-row table.
 
 ## What we did
 
